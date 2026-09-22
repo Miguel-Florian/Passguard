@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ .Titre }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 16px; background: #f1f5f9; color: #0f172a; }
+    .barre { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .barre button { background: #4f46e5; color: #fff; border: 0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .planche { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .etiquette { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; text-align: center; page-break-inside: avoid; }
+    .etiquette img { width: 130px; height: 130px; }
+    .serie { font-family: ui-monospace, monospace; font-weight: 700; font-size: 13px; margin-top: 4px; }
+    .meta { font-size: 11px; color: #475569; line-height: 1.35; }
+    .url { font-size: 8px; color: #94a3b8; word-break: break-all; margin-top: 4px; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .barre { display: none; }
+      .planche { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="barre">
+    <div><strong>Planche d'étiquettes QR</strong> — {{ .Total }} matériel(s)</div>
+    <button onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  </div>
+
+  <div class="planche">
+    {{ range .Etiquettes }}
+    <div class="etiquette">
+      <img src="{{ .QRDataURI }}" alt="QR {{ .NumeroSerie }}">
+      <div class="serie">{{ .NumeroSerie }}</div>
+      <div class="meta">{{ .IDMateriel }} · {{ .Type }}<br>{{ .Modele }}<br>{{ .Detenteur }}</div>
+      <div class="url">{{ .URL }}</div>
+    </div>
+    {{ end }}
+  </div>
+</body>
+</html>

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ .Titre }} · Blessing Hardware PassGuard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
+
+<header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+    <div class="flex items-center gap-3">
+      <div class="bg-indigo-600 p-2 rounded-lg text-white">
+        <i class="fa-solid fa-shield-halved text-xl"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-lg text-white leading-none">Blessing Hardware PassGuard</h1>
+        <span class="text-xs text-slate-400">Poste de contrôle · {{ .PointControle }}</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-sm">
+      <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Serveur Go en ligne
+      </span>
+      <span class="text-slate-400 border-l border-slate-800 pl-4" id="clock">{{ .Maintenant }}</span>
+      {{ if .Admin }}
+        <span class="text-slate-300 text-xs">
+          <i class="fa-solid fa-user-shield text-indigo-400"></i> {{ .Admin.NomPrenom }}
+          <span class="text-slate-500">({{ .Admin.Role }})</span>
+        </span>
+        {{ if eq .Admin.Role "ADMIN" }}
+          <a href="/admin" class="text-xs text-indigo-400 hover:text-indigo-300">Administration</a>
+        {{ end }}
+        <button onclick="logout()" class="text-xs text-slate-400 hover:text-rose-400">Déconnexion</button>
+      {{ else }}
+        <a href="/login?next=/v/{{ .Serial }}" class="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-lg text-white">
+          Connexion vigile
+        </a>
+      {{ end }}
+    </div>
+  </div>
+</header>
+
+{{ if not .Admin }}
+<div class="bg-amber-500/10 border-b border-amber-500/30 text-amber-300 text-xs">
+  <div class="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2">
+    <i class="fa-solid fa-circle-info"></i>
+    Mode consultation : aucun mouvement ne peut être enregistré sans connexion vigile.
+  </div>
+</div>
+{{ end }}
+
+<main class="max-w-7xl mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+  <!-- ============ Colonne gauche : scanner + décision ============ -->
+  <section class="lg:col-span-5 space-y-6">
+
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-xl">
+      <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-qrcode text-indigo-400"></i> Scanner d'équipement
+      </h2>
+      <label class="block text-xs font-medium text-slate-300 mb-1">
+        Numéro de série (lecture QR ou saisie manuelle)
+      </label>
+      <div class="flex gap-2">
+        <input type="text" id="serialInput" value="{{ .Serial }}" placeholder="SN-HP-889021"
+               onkeydown="if(event.key === 'Enter') chargerSerie()"
+               class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono uppercase">
+        <button onclick="chargerSerie()"
+                class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 rounded-lg text-sm font-medium">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">
+        Le QR code du matériel ouvre directement cette page.
+      </p>
+    </div>
+
+    {{ if .Erreur }}
+      <div class="bg-rose-950/40 border border-rose-500/40 rounded-xl p-6 shadow-xl">
+        <div class="flex items-start gap-4">
+          <div class="w-14 h-14 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 text-2xl">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-extrabold text-white">MATÉRIEL INCONNU</h3>
+            <p class="text-slate-300 text-sm mt-1">{{ .Erreur }}</p>
+          </div>
+        </div>
+      </div>
+    {{ end }}
+
+    {{ if and .Device .Eval }}
+    <div id="decisionCard"
+         class="rounded-xl p-6 shadow-xl relative overflow-hidden transition-all
+         {{ if eq .Eval.Color "GREEN" }}bg-emerald-950/40 border border-emerald-500/40
+         {{ else if eq .Eval.Color "AMBER" }}bg-amber-950/40 border border-amber-500/40
+         {{ else }}bg-rose-950/40 border border-rose-500/40{{ end }}">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <span id="decisionBadge"
+                class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-3
+                {{ if eq .Eval.Color "GREEN" }}bg-emerald-500 text-slate-950 status-badge-green
+                {{ else if eq .Eval.Color "AMBER" }}bg-amber-500 text-slate-950
+                {{ else }}bg-rose-500 text-white status-badge-red{{ end }}">
+            <i class="fa-solid {{ if .Eval.AccessGranted }}fa-check{{ else }}fa-xmark{{ end }}"></i>
+            {{ .Eval.Decision }}
+          </span>
+          <h3 id="decisionTitle" class="text-2xl font-extrabold text-white">{{ .Eval.Title }}</h3>
+          <p id="decisionMessage" class="text-slate-300 text-sm mt-1">{{ .Eval.Message }}</p>
+        </div>
+        <div id="decisionIcon"
+             class="w-16 h-16 shrink-0 rounded-full flex items-center justify-center text-3xl
+             {{ if .Eval.AccessGranted }}bg-emerald-500/10 border border-emerald-500/30 text-emerald-400
+             {{ else }}bg-rose-500/10 border border-rose-500/30 text-rose-400{{ end }}">
+          <i class="fa-solid {{ if .Eval.AccessGranted }}fa-door-open{{ else }}fa-ban{{ end }}"></i>
+        </div>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-slate-100/10 grid grid-cols-2 gap-4 text-xs">
+        <div>
+          <span class="text-slate-400 block">Flux proposé</span>
+          <span id="fluxAction" class="font-bold text-slate-100 text-sm">{{ .Eval.SensLabel }}</span>
+        </div>
+        <div>
+          <span class="text-slate-400 block">Dernier scan enregistré</span>
+          <span class="font-mono text-slate-200">{{ datetime .Device.HorodatageDernierScan }}</span>
+        </div>
+      </div>
+
+      {{ if .Eval.MotifsLabels }}
+      <ul class="mt-4 space-y-1 text-xs text-slate-300">
+        {{ range .Eval.MotifsLabels }}
+          <li class="flex items-start gap-2">
+            <i class="fa-solid fa-circle-exclamation text-amber-400 mt-0.5"></i><span>{{ . }}</span>
+          </li>
+        {{ end }}
+      </ul>
+      {{ end }}
+    </div>
+
+    <!-- ============ Validation du mouvement par le vigile ============ -->
+    {{ if .Admin }}
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-xl space-y-4">
+      <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+        <i class="fa-solid fa-right-left text-indigo-400"></i> Enregistrer le mouvement
+      </h2>
+      <p class="text-xs text-slate-400">
+        Sens suggéré par le serveur :
+        <span class="font-bold text-indigo-300">{{ .Eval.SensSuggere }}</span>.
+        Corrigez si le matériel va dans l'autre sens.
+      </p>
+
+      <div class="grid grid-cols-2 gap-3">
+        <button onclick="enregistrer('ENTRE')"
+                class="py-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition
+                {{ if eq .Eval.SensSuggere "ENTRE" }}bg-indigo-600 hover:bg-indigo-500 text-white ring-2 ring-indigo-400
+                {{ else }}bg-slate-700 hover:bg-slate-600 text-slate-200{{ end }}">
+          <i class="fa-solid fa-arrow-right-to-bracket"></i> ENTRÉE
+        </button>
+        <button onclick="enregistrer('SORTI')"
+                class="py-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition
+                {{ if eq .Eval.SensSuggere "SORTI" }}bg-indigo-600 hover:bg-indigo-500 text-white ring-2 ring-indigo-400
+                {{ else }}bg-slate-700 hover:bg-slate-600 text-slate-200{{ end }}">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i> SORTIE
+        </button>
+      </div>
+
+      {{ if .Eval.DerogationPossible }}
+      <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 space-y-3">
+        <p class="text-xs text-amber-300 flex items-start gap-2">
+          <i class="fa-solid fa-clock mt-0.5"></i>
+          Sortie hors plage horaire. Vous pouvez accorder une dérogation
+          jusqu'à {{ .DerogMaxHeure }}:00 ; elle sera tracée à votre nom.
+        </p>
+        <input type="text" id="justification" placeholder="Motif de la dérogation (obligatoire)"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500">
+        <button onclick="enregistrerDerogation()"
+                class="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold py-2.5 rounded-lg text-sm">
+          <i class="fa-solid fa-key"></i> Autoriser la sortie avec dérogation
+        </button>
+      </div>
+      {{ end }}
+
+      <div id="scanResult" class="hidden text-xs rounded-lg p-3"></div>
+    </div>
+    {{ else }}
+    <!-- Matériel trouvé mais vigile non connecté : on demande la connexion
+         ICI, sur la fiche déjà ouverte, plutôt que de renvoyer vers une
+         page séparée qui ferait perdre le numéro de série scanné. -->
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-xl space-y-4">
+      <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+        <i class="fa-solid fa-lock text-indigo-400"></i> Connexion requise pour enregistrer un mouvement
+      </h2>
+      <p class="text-xs text-slate-400">
+        Vous consultez la fiche en lecture seule. Connectez-vous pour valider
+        l'entrée ou la sortie de ce matériel.
+      </p>
+      <div>
+        <label class="block text-xs font-medium text-slate-300 mb-1">Adresse e-mail</label>
+        <input type="email" id="loginEmail" autocomplete="username"
+               onkeydown="if(event.key === 'Enter') document.getElementById('loginPassword').focus()"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-300 mb-1">Mot de passe</label>
+        <input type="password" id="loginPassword" autocomplete="current-password"
+               onkeydown="if(event.key === 'Enter') connexionInline()"
+               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
+      <div id="loginErreur" class="hidden text-xs bg-rose-950/60 text-rose-300 border border-rose-500/40 rounded-lg p-3"></div>
+      <button onclick="connexionInline()"
+              class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg text-sm flex items-center justify-center gap-2">
+        <i class="fa-solid fa-right-to-bracket"></i> Se connecter et continuer
+      </button>
+    </div>
+    {{ end }}
+    {{ end }}
+  </section>
+
+  <!-- ============ Colonne droite : fiche matériel ============ -->
+  <section class="lg:col-span-7 space-y-6">
+    {{ if and .Device .Restreint }}
+    <!-- Mode restreint (production, visiteur non connecté) : aucune donnée
+         nominative n'est affichée. Seul un vigile connecté voit la fiche
+         complète (voir handler Verify côté API, qui applique la même règle). -->
+    <div class="bg-slate-800/40 border border-dashed border-slate-700 rounded-xl p-10 text-center space-y-3">
+      <i class="fa-solid fa-eye-slash text-4xl text-slate-600"></i>
+      <p class="text-sm text-slate-300">
+        Détails masqués : connectez-vous pour afficher la fiche complète
+        (détenteur, département, zones, historique).
+      </p>
+      <p class="text-xs text-slate-500 font-mono">{{ .Device.TypeMateriel }} · {{ .Device.NumeroSerie }}</p>
+    </div>
+    {{ else if .Device }}
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 shadow-xl space-y-6">
+
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-700/60">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              {{ .Device.TypeMateriel }}
+            </span>
+            <span class="text-xs font-mono text-slate-400">ID : {{ .Device.IDMateriel }}</span>
+          </div>
+          <h2 class="text-xl font-bold text-white mt-1">{{ defaut .Device.MarqueModele "Modèle non précisé" }}</h2>
+        </div>
+        <div class="text-right flex items-center gap-4">
+          <div>
+            <span class="text-xs text-slate-400 block">N° de série (gravé)</span>
+            <span class="font-mono text-lg font-bold text-amber-400 tracking-wider">{{ .Device.NumeroSerie }}</span>
+          </div>
+          {{ if .QRDataURI }}
+            <img src="{{ .QRDataURI }}" alt="QR code" class="w-16 h-16 bg-white p-1 rounded">
+          {{ end }}
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700/40 space-y-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <i class="fa-solid fa-user-check text-indigo-400"></i> Détenteur enregistré
+          </h3>
+          <div>
+            <span class="text-xs text-slate-400 block">Nom &amp; prénom</span>
+            <span class="font-semibold text-slate-100 text-sm">{{ .Device.NomPrenom }}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-slate-400 block">Matricule</span>
+              <span class="font-mono text-slate-300">{{ defaut .Device.Matricule "—" }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Département</span>
+              <span class="text-slate-300">{{ defaut .Device.Departement "—" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-slate-900/60 p-4 rounded-lg border border-slate-700/40 space-y-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <i class="fa-solid fa-location-dot text-indigo-400"></i> Périmètre d'accès
+          </h3>
+          <div class="space-y-2 text-xs">
+            <div>
+              <span class="text-slate-400 block">Site d'origine</span>
+              <span class="font-semibold text-slate-200">{{ defaut .Device.SiteOrigine "—" }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Zones autorisées</span>
+              <span class="text-slate-300 font-mono">{{ .Device.ZonesLabel }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Expiration de l'habilitation</span>
+              <span class="text-slate-300 font-mono">{{ date .Device.DateExpirationAutorisation }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{ if .Eval }}
+      <div class="space-y-3 pt-2">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Évaluation des règles du serveur</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+          {{ range .Eval.Rules }}
+          <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/40">
+            <span class="text-slate-400 block mb-1">{{ .Label }}</span>
+            <span class="font-bold flex items-center gap-1 {{ if .Valid }}text-emerald-400{{ else }}text-rose-400{{ end }}">
+              <i class="fa-solid {{ if .Valid }}fa-check{{ else }}fa-xmark{{ end }}"></i> {{ .Value }}
+            </span>
+          </div>
+          {{ end }}
+        </div>
+      </div>
+      {{ end }}
+    </div>
+
+    {{ if .Historique }}
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 shadow-xl">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i> Derniers mouvements (journal d'audit)
+      </h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="text-slate-400 border-b border-slate-700/60">
+            <tr>
+              <th class="text-left py-2">Horodatage</th>
+              <th class="text-left">Sens</th>
+              <th class="text-left">Décision</th>
+              <th class="text-left">Agent</th>
+              <th class="text-left">Dérogation</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800">
+            {{ range .Historique }}
+            <tr>
+              <td class="py-2 font-mono text-slate-300">{{ dt .ScannedAt }}</td>
+              <td class="text-slate-200">{{ .SensConfirme }}</td>
+              <td class="{{ if .AccessGranted }}text-emerald-400{{ else }}text-rose-400{{ end }} font-semibold">{{ .Decision }}</td>
+              <td class="text-slate-400">{{ defaut .AgentNom "—" }}</td>
+              <td class="text-amber-400">{{ if .Derogation }}OUI{{ else }}—{{ end }}</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{ end }}
+
+    {{ else if not .Erreur }}
+    <div class="bg-slate-800/40 border border-dashed border-slate-700 rounded-xl p-12 text-center text-slate-400">
+      <i class="fa-solid fa-qrcode text-5xl mb-4 text-slate-600"></i>
+      <p class="text-sm">Scannez un QR code ou saisissez un numéro de série pour afficher la fiche.</p>
+    </div>
+    {{ end }}
+  </section>
+</main>
+
+<script>
+  const serial = "{{ .Serial }}";
+
+  function chargerSerie() {
+    const v = document.getElementById('serialInput').value.trim().toUpperCase();
+    if (v) window.location.href = '/v/' + encodeURIComponent(v);
+  }
+
+  async function connexionInline() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const erreur = document.getElementById('loginErreur');
+    erreur.classList.add('hidden');
+
+    if (!email || !password) {
+      erreur.textContent = 'E-mail et mot de passe requis.';
+      erreur.classList.remove('hidden');
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        erreur.textContent = data.error || 'Connexion impossible.';
+        erreur.classList.remove('hidden');
+        return;
+      }
+      // On recharge la MÊME page /v/:sn : la fiche déjà scannée reste
+      // affichée, et le bloc de validation ENTRÉE/SORTIE apparaît.
+      window.location.reload();
+    } catch (e) {
+      erreur.textContent = 'Serveur injoignable.';
+      erreur.classList.remove('hidden');
+    }
+  }
+
+  async function enregistrer(sens, derogation, justification) {
+    const zone = new URLSearchParams(window.location.search).get('zone') || '';
+    const boite = document.getElementById('scanResult');
+    boite.className = 'text-xs rounded-lg p-3 bg-slate-900 text-slate-300 border border-slate-700';
+    boite.textContent = 'Enregistrement en cours...';
+    boite.classList.remove('hidden');
+
+    try {
+      const res = await fetch('/api/scan/' + encodeURIComponent(serial), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sens: sens,
+          zone: zone,
+          derogation: derogation === true,
+          justification: justification || ''
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        boite.className = 'text-xs rounded-lg p-3 bg-rose-950/60 text-rose-300 border border-rose-500/40';
+        boite.textContent = data.error || 'Échec de l\'enregistrement.';
+        return;
+      }
+      const ev = data.evaluation;
+      const ok = ev.access_granted;
+      boite.className = 'text-xs rounded-lg p-3 border ' + (ok
+        ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+        : 'bg-rose-950/60 text-rose-300 border-rose-500/40');
+      boite.textContent = 'Mouvement enregistré (log #' + data.log_id + ') · '
+        + ev.title + ' · ' + ev.sens_label;
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      boite.className = 'text-xs rounded-lg p-3 bg-rose-950/60 text-rose-300 border border-rose-500/40';
+      boite.textContent = 'Serveur injoignable.';
+    }
+  }
+
+  function enregistrerDerogation() {
+    const champ = document.getElementById('justification');
+    const motif = champ ? champ.value.trim() : '';
+    if (!motif) {
+      alert('La dérogation exige une justification écrite.');
+      return;
+    }
+    enregistrer('SORTI', true, motif);
+  }
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  setInterval(() => {
+    const el = document.getElementById('clock');
+    if (el) {
+      const d = new Date();
+      el.textContent = d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR');
+    }
+  }, 1000);
+</script>
+</body>
+</html>

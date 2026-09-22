@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administration · Blessing Hardware PassGuard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
+
+<header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+    <div class="flex items-center gap-3">
+      <div class="bg-indigo-600 p-2 rounded-lg text-white"><i class="fa-solid fa-shield-halved text-xl"></i></div>
+      <div>
+        <h1 class="font-bold text-lg text-white leading-none">Blessing Hardware PassGuard</h1>
+        <span class="text-xs text-slate-400">Console d'administration</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 text-xs">
+      <a href="/scan" class="text-indigo-400 hover:text-indigo-300">
+        <i class="fa-solid fa-qrcode"></i> Poste de contrôle
+      </a>
+      <a href="/admin/etiquettes" target="_blank" class="text-indigo-400 hover:text-indigo-300">
+        <i class="fa-solid fa-print"></i> Planche d'étiquettes
+      </a>
+      <button onclick="regenererQRCodes()" class="text-indigo-400 hover:text-indigo-300">
+        <i class="fa-solid fa-arrows-rotate"></i> Régénérer les QR codes
+      </button>
+      <span class="text-slate-300"><i class="fa-solid fa-user-shield text-indigo-400"></i> {{ .Admin.NomPrenom }}</span>
+      <button onclick="logout()" class="text-slate-400 hover:text-rose-400">Déconnexion</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+
+  <!-- Statistiques -->
+  <div id="stats" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3"></div>
+
+  <!-- Onglets -->
+  <div class="flex gap-2 border-b border-slate-800">
+    <button onclick="ongletActif('devices')" id="tab-devices"
+            class="px-4 py-2 text-sm font-medium border-b-2 border-indigo-500 text-white">Matériels</button>
+    <button onclick="ongletActif('import')" id="tab-import"
+            class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-400">Import Excel</button>
+    <button onclick="ongletActif('audit')" id="tab-audit"
+            class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-slate-400">Journal d'audit</button>
+  </div>
+
+  <!-- ================= Matériels ================= -->
+  <section id="panel-devices" class="space-y-4">
+    <div class="flex flex-wrap gap-3 items-center justify-between">
+      <div class="flex gap-2 flex-1 min-w-64">
+        <input type="text" id="recherche" placeholder="Rechercher (S/N, ID, détenteur, modèle)"
+               onkeydown="if(event.key === 'Enter') chargerDevices()"
+               class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <select id="filtreStatut" onchange="chargerDevices()"
+                class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+          <option value="">Toutes habilitations</option>
+          <option value="AUTORISE">Autorisé</option>
+          <option value="NON_AUTORISE">Non autorisé</option>
+          <option value="SUSPENDU">Suspendu</option>
+          <option value="TEMPORAIRE">Temporaire</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <a href="/api/export/devices.xlsx"
+           class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm px-4 py-2 rounded-lg">
+          <i class="fa-solid fa-file-export"></i> Exporter
+        </a>
+        <button onclick="ouvrirFormulaire()"
+                class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">
+          <i class="fa-solid fa-plus"></i> Ajouter un matériel
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-900/80 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3">ID / Série</th>
+              <th class="text-left">Matériel</th>
+              <th class="text-left">Détenteur</th>
+              <th class="text-left">Habilitation</th>
+              <th class="text-left">Plage</th>
+              <th class="text-left">Flux</th>
+              <th class="text-left">Dernier scan</th>
+              <th class="text-right px-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyDevices" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+      <div id="devicesVide" class="hidden p-8 text-center text-slate-500 text-sm">Aucun matériel trouvé.</div>
+    </div>
+  </section>
+
+  <!-- ================= Import ================= -->
+  <section id="panel-import" class="hidden space-y-4">
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Import en masse</h2>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        Le fichier doit contenir au minimum les colonnes <span class="font-mono text-indigo-300">Numero_Serie</span>
+        et <span class="font-mono text-indigo-300">Nom_Prenom</span>. Les fiches existantes sont mises à jour
+        d'après leur numéro de série. Les colonnes Dernier_Statut_Flux et Horodatage_Dernier_Scan sont
+        ignorées : ces valeurs proviennent exclusivement des scans.
+      </p>
+      <div class="flex flex-wrap gap-3 items-center">
+        <a href="/api/import/template.xlsx"
+           class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm px-4 py-2 rounded-lg">
+          <i class="fa-solid fa-download"></i> Télécharger le modèle
+        </a>
+        <input type="file" id="fichier" accept=".xlsx,.xlsm"
+               class="text-xs text-slate-300 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-sm">
+        <button onclick="importer()"
+                class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">
+          <i class="fa-solid fa-upload"></i> Importer
+        </button>
+      </div>
+      <div id="rapportImport" class="hidden"></div>
+    </div>
+
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6">
+      <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Historique des imports</h2>
+      <div id="historiqueImports" class="space-y-2 text-xs text-slate-400"></div>
+    </div>
+  </section>
+
+  <!-- ================= Audit ================= -->
+  <section id="panel-audit" class="hidden space-y-4">
+    <div class="flex flex-wrap gap-2 items-center">
+      <input type="text" id="auditSerie" placeholder="Numéro de série"
+             class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <select id="auditDecision" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+        <option value="">Toutes décisions</option>
+        <option value="AUTORISE">Autorisé</option>
+        <option value="REFUSE">Refusé</option>
+        <option value="ALERTE">Alerte</option>
+      </select>
+      <input type="date" id="auditDu" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <input type="date" id="auditAu" class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+      <label class="flex items-center gap-2 text-xs text-slate-300">
+        <input type="checkbox" id="auditDerog" class="rounded bg-slate-950 border-slate-700"> Dérogations seules
+      </label>
+      <button onclick="chargerAudit()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">
+        Filtrer
+      </button>
+      <button onclick="exporterAudit()" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm px-4 py-2 rounded-lg">
+        <i class="fa-solid fa-file-export"></i> Exporter
+      </button>
+    </div>
+
+    <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-900/80 text-slate-400">
+            <tr>
+              <th class="text-left px-4 py-3">Horodatage</th>
+              <th class="text-left">Série</th>
+              <th class="text-left">Détenteur</th>
+              <th class="text-left">Suggéré</th>
+              <th class="text-left">Confirmé</th>
+              <th class="text-left">Décision</th>
+              <th class="text-left">Motifs</th>
+              <th class="text-left">Agent</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyAudit" class="divide-y divide-slate-800"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= Formulaire matériel ================= -->
+<div id="modale" class="hidden fixed inset-0 bg-slate-950/80 z-50 overflow-y-auto p-4">
+  <div class="max-w-3xl mx-auto bg-slate-800 border border-slate-700 rounded-xl p-6 my-8 space-y-4">
+    <div class="flex justify-between items-center">
+      <h2 id="modaleTitre" class="text-lg font-bold text-white">Ajouter un matériel</h2>
+      <button onclick="fermerFormulaire()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+      <div><label class="text-xs text-slate-400">ID matériel</label>
+        <input id="f_id_materiel" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Numéro de série *</label>
+        <input id="f_numero_serie" class="champ font-mono"></div>
+      <div><label class="text-xs text-slate-400">Type</label>
+        <input id="f_type_materiel" class="champ" placeholder="Laptop"></div>
+      <div><label class="text-xs text-slate-400">Marque / modèle</label>
+        <input id="f_marque_modele" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Détenteur *</label>
+        <input id="f_nom_prenom" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Matricule</label>
+        <input id="f_matricule" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Département</label>
+        <input id="f_departement" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Site d'origine</label>
+        <input id="f_site_origine" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Habilitation</label>
+        <select id="f_statut_autorisation" class="champ">
+          <option value="AUTORISE">AUTORISE</option>
+          <option value="NON_AUTORISE">NON_AUTORISE</option>
+          <option value="SUSPENDU">SUSPENDU</option>
+          <option value="TEMPORAIRE">TEMPORAIRE</option>
+        </select></div>
+      <div><label class="text-xs text-slate-400">Expiration (AAAA-MM-JJ)</label>
+        <input id="f_date_expiration" type="date" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Statut matériel</label>
+        <select id="f_statut_materiel" class="champ">
+          <option value="ACTIF">ACTIF</option>
+          <option value="EN_MAINTENANCE">EN_MAINTENANCE</option>
+          <option value="VOLE_PERDU">VOLE_PERDU</option>
+          <option value="REFORME">REFORME</option>
+        </select></div>
+      <div><label class="text-xs text-slate-400">Zones (séparées par des virgules)</label>
+        <input id="f_zones" class="champ" placeholder="Zone-A, Zone-B ou Zone-Toutes"></div>
+      <div><label class="text-xs text-slate-400">Heure de début</label>
+        <input id="f_heure_debut" type="time" value="07:00" class="champ"></div>
+      <div><label class="text-xs text-slate-400">Heure de fin</label>
+        <input id="f_heure_fin" type="time" value="18:00" class="champ"></div>
+      <div class="flex items-center gap-2 pt-6">
+        <input id="f_weekend" type="checkbox" class="rounded bg-slate-950 border-slate-700">
+        <label class="text-xs text-slate-300">Sortie autorisée le week-end</label>
+      </div>
+      <div class="md:col-span-2"><label class="text-xs text-slate-400">Commentaire</label>
+        <input id="f_commentaire" class="champ"></div>
+    </div>
+
+    <div id="modaleErreur" class="hidden text-xs bg-rose-950/60 text-rose-300 border border-rose-500/40 rounded-lg p-3"></div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button onclick="fermerFormulaire()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm px-4 py-2 rounded-lg">Annuler</button>
+      <button onclick="enregistrerDevice()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= QR code ================= -->
+<div id="modaleQR" class="hidden fixed inset-0 bg-slate-950/80 z-50 flex items-center justify-center p-4">
+  <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 text-center space-y-4 max-w-sm w-full">
+    <h2 class="text-sm font-semibold text-slate-300" id="qrTitre"></h2>
+    <img id="qrImage" class="mx-auto bg-white p-3 rounded-lg" width="260" height="260" alt="QR code">
+    <p class="text-xs font-mono text-slate-400 break-all" id="qrUrl"></p>
+    <div class="flex gap-2">
+      <a id="qrTelecharger" download class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg">
+        <i class="fa-solid fa-download"></i> Télécharger
+      </a>
+      <button onclick="document.getElementById('modaleQR').classList.add('hidden')"
+              class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm px-4 py-2 rounded-lg">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let editionID = null;
+
+  const badge = (texte, couleur) =>
+    '<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-' + couleur + '-500/15 text-' + couleur + '-400 border border-' + couleur + '-500/30">' + texte + '</span>';
+
+  const couleurAuth = (s) => s === 'AUTORISE' ? 'emerald' : (s === 'TEMPORAIRE' ? 'amber' : 'rose');
+
+  function echapper(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function ongletActif(nom) {
+    ['devices', 'import', 'audit'].forEach(o => {
+      document.getElementById('panel-' + o).classList.toggle('hidden', o !== nom);
+      const t = document.getElementById('tab-' + o);
+      t.className = 'px-4 py-2 text-sm font-medium border-b-2 ' +
+        (o === nom ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400');
+    });
+    if (nom === 'audit') chargerAudit();
+    if (nom === 'import') chargerImports();
+  }
+
+  async function chargerStats() {
+    const res = await fetch('/api/stats');
+    if (!res.ok) return;
+    const data = await res.json();
+    const s = data.stats;
+    const carte = (label, valeur, couleur) =>
+      '<div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4">' +
+      '<div class="text-xs text-slate-400">' + label + '</div>' +
+      '<div class="text-2xl font-bold text-' + couleur + '-400">' + valeur + '</div></div>';
+    document.getElementById('stats').innerHTML =
+      carte('Matériels', s.total, 'slate') +
+      carte('Autorisés', s.autorises, 'emerald') +
+      carte('Hors site', s.sortis, 'indigo') +
+      carte('À surveiller', s.alertes, 'rose') +
+      carte('Scans du jour', s.scans_du_jour, 'slate') +
+      carte('Refus du jour', s.refus_du_jour, 'rose') +
+      carte('Dérogations', s.derogations_du_jour, 'amber');
+  }
+
+  async function chargerDevices() {
+    const q = document.getElementById('recherche').value.trim();
+    const statut = document.getElementById('filtreStatut').value;
+    const res = await fetch('/api/devices?limit=200&q=' + encodeURIComponent(q) +
+      '&statut_autorisation=' + encodeURIComponent(statut));
+    const data = await res.json();
+    const corps = document.getElementById('tbodyDevices');
+    corps.innerHTML = '';
+    document.getElementById('devicesVide').classList.toggle('hidden', data.devices.length > 0);
+
+    data.devices.forEach(d => {
+      const scan = d.horodatage_dernier_scan
+        ? new Date(d.horodatage_dernier_scan).toLocaleString('fr-FR')
+        : '—';
+      const fluxCouleur = d.dernier_statut_flux === 'SORTI' ? 'indigo' : 'slate';
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-slate-800/40';
+      tr.innerHTML =
+        '<td class="px-4 py-3"><div class="text-slate-300">' + echapper(d.id_materiel) + '</div>' +
+        '<div class="font-mono text-amber-400">' + echapper(d.numero_serie) + '</div></td>' +
+        '<td><div class="text-slate-200">' + echapper(d.marque_modele) + '</div>' +
+        '<div class="text-slate-500">' + echapper(d.type_materiel) + '</div></td>' +
+        '<td><div class="text-slate-200">' + echapper(d.nom_prenom) + '</div>' +
+        '<div class="text-slate-500">' + echapper(d.departement) + '</div></td>' +
+        '<td>' + badge(d.statut_autorisation, couleurAuth(d.statut_autorisation)) +
+        (d.statut_materiel !== 'ACTIF' ? ' ' + badge(d.statut_materiel, 'rose') : '') + '</td>' +
+        '<td class="text-slate-300 font-mono">' + d.heure_autorisee_debut + '-' + d.heure_autorisee_fin +
+        (d.autorise_weekend ? ' <span class="text-emerald-400">WE</span>' : '') + '</td>' +
+        '<td>' + badge(d.dernier_statut_flux, fluxCouleur) + '</td>' +
+        '<td class="text-slate-400">' + scan + '</td>' +
+        '<td class="px-4 text-right whitespace-nowrap">' +
+        '<button class="text-indigo-400 hover:text-indigo-300 px-1" title="QR code"><i class="fa-solid fa-qrcode"></i></button>' +
+        '<button class="text-slate-400 hover:text-white px-1" title="Modifier"><i class="fa-solid fa-pen"></i></button>' +
+        '<button class="text-rose-400 hover:text-rose-300 px-1" title="Archiver"><i class="fa-solid fa-box-archive"></i></button>' +
+        '</td>';
+
+      const actions = tr.querySelectorAll('td:last-child button');
+      actions[0].onclick = () => voirQR(d);
+      actions[1].onclick = () => ouvrirFormulaire(d);
+      actions[2].onclick = () => archiver(d);
+      corps.appendChild(tr);
+    });
+  }
+
+  function voirQR(d) {
+    document.getElementById('qrTitre').textContent = d.id_materiel + ' · ' + d.numero_serie;
+    document.getElementById('qrImage').src = '/api/devices/' + d.id + '/qrcode.png?taille=520';
+    document.getElementById('qrTelecharger').href = '/api/devices/' + d.id + '/qrcode.png?taille=1024';
+    document.getElementById('qrUrl').textContent = window.location.origin + '/v/' + d.numero_serie;
+    document.getElementById('modaleQR').classList.remove('hidden');
+  }
+
+  function ouvrirFormulaire(d) {
+    editionID = d ? d.id : null;
+    document.getElementById('modaleTitre').textContent = d ? 'Modifier le matériel' : 'Ajouter un matériel';
+    document.getElementById('modaleErreur').classList.add('hidden');
+
+    const v = (id, val) => document.getElementById(id).value = val || '';
+    v('f_id_materiel', d && d.id_materiel);
+    v('f_numero_serie', d && d.numero_serie);
+    v('f_type_materiel', d && d.type_materiel);
+    v('f_marque_modele', d && d.marque_modele);
+    v('f_nom_prenom', d && d.nom_prenom);
+    v('f_matricule', d && d.matricule);
+    v('f_departement', d && d.departement);
+    v('f_site_origine', d && d.site_origine);
+    v('f_commentaire', d && d.commentaire);
+    v('f_zones', d && d.zones ? d.zones.join(', ') : '');
+    v('f_date_expiration', d && d.date_expiration_autorisation
+      ? d.date_expiration_autorisation.substring(0, 10) : '');
+    document.getElementById('f_statut_autorisation').value = d ? d.statut_autorisation : 'NON_AUTORISE';
+    document.getElementById('f_statut_materiel').value = d ? d.statut_materiel : 'ACTIF';
+    document.getElementById('f_heure_debut').value = d ? d.heure_autorisee_debut : '07:00';
+    document.getElementById('f_heure_fin').value = d ? d.heure_autorisee_fin : '18:00';
+    document.getElementById('f_weekend').checked = d ? d.autorise_weekend : false;
+
+    document.getElementById('modale').classList.remove('hidden');
+  }
+
+  function fermerFormulaire() {
+    document.getElementById('modale').classList.add('hidden');
+  }
+
+  async function enregistrerDevice() {
+    const val = (id) => document.getElementById(id).value.trim();
+    const corps = {
+      id_materiel: val('f_id_materiel'),
+      numero_serie: val('f_numero_serie'),
+      type_materiel: val('f_type_materiel'),
+      marque_modele: val('f_marque_modele'),
+      nom_prenom: val('f_nom_prenom'),
+      matricule: val('f_matricule'),
+      departement: val('f_departement'),
+      site_origine: val('f_site_origine'),
+      statut_autorisation: val('f_statut_autorisation'),
+      date_expiration_autorisation: val('f_date_expiration'),
+      statut_materiel: val('f_statut_materiel'),
+      zones: val('f_zones').split(',').map(z => z.trim()).filter(z => z.length > 0),
+      heure_autorisee_debut: val('f_heure_debut'),
+      heure_autorisee_fin: val('f_heure_fin'),
+      autorise_weekend: document.getElementById('f_weekend').checked,
+      commentaire: val('f_commentaire')
+    };
+
+    const url = editionID ? '/api/devices/' + editionID : '/api/devices';
+    const res = await fetch(url, {
+      method: editionID ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corps)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const boite = document.getElementById('modaleErreur');
+      boite.textContent = data.error || 'Enregistrement impossible.';
+      boite.classList.remove('hidden');
+      return;
+    }
+    fermerFormulaire();
+    chargerDevices();
+    chargerStats();
+  }
+
+  async function archiver(d) {
+    if (!confirm('Archiver ' + d.numero_serie + ' ? La fiche disparaît des listes mais tout son historique est conservé.')) return;
+    await fetch('/api/devices/' + d.id, { method: 'DELETE' });
+    chargerDevices();
+    chargerStats();
+  }
+
+  async function importer() {
+    const input = document.getElementById('fichier');
+    if (!input.files.length) {
+      alert('Sélectionnez un fichier .xlsx');
+      return;
+    }
+    const form = new FormData();
+    form.append('file', input.files[0]);
+
+    const boite = document.getElementById('rapportImport');
+    boite.className = 'text-xs text-slate-300 bg-slate-900 border border-slate-700 rounded-lg p-4';
+    boite.textContent = 'Import en cours...';
+    boite.classList.remove('hidden');
+
+    const res = await fetch('/api/import/devices', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      boite.className = 'text-xs bg-rose-950/60 text-rose-300 border border-rose-500/40 rounded-lg p-4';
+      boite.textContent = data.error || 'Import impossible.';
+      return;
+    }
+    const r = data.rapport;
+    let html = '<div class="text-sm text-slate-200 font-semibold mb-2">' + echapper(r.nom_fichier) + '</div>' +
+      '<div class="flex flex-wrap gap-4 text-xs mb-3">' +
+      '<span class="text-slate-300">Lignes : ' + r.lignes_total + '</span>' +
+      '<span class="text-emerald-400">Créées : ' + r.lignes_creees + '</span>' +
+      '<span class="text-indigo-400">Mises à jour : ' + r.lignes_majs + '</span>' +
+      '<span class="text-rose-400">En erreur : ' + r.lignes_erreur + '</span></div>';
+    if (r.erreurs && r.erreurs.length) {
+      html += '<ul class="space-y-1 max-h-64 overflow-y-auto">';
+      r.erreurs.forEach(e => {
+        const avert = e.message.indexOf('avertissement') === 0;
+        html += '<li class="' + (avert ? 'text-amber-400' : 'text-rose-400') + '">Ligne ' + e.ligne +
+          (e.numero_serie ? ' (' + echapper(e.numero_serie) + ')' : '') + ' : ' + echapper(e.message) + '</li>';
+      });
+      html += '</ul>';
+    }
+    boite.className = 'text-xs bg-slate-900 border border-slate-700 rounded-lg p-4';
+    boite.innerHTML = html;
+
+    chargerDevices();
+    chargerStats();
+    chargerImports();
+  }
+
+  async function chargerImports() {
+    const res = await fetch('/api/import/history');
+    if (!res.ok) return;
+    const data = await res.json();
+    const zone = document.getElementById('historiqueImports');
+    if (!data.imports.length) {
+      zone.innerHTML = '<p class="text-slate-500">Aucun import pour le moment.</p>';
+      return;
+    }
+    zone.innerHTML = data.imports.map(i =>
+      '<div class="flex flex-wrap gap-3 justify-between border-b border-slate-800 pb-2">' +
+      '<span class="text-slate-300">' + echapper(i.nom_fichier) + '</span>' +
+      '<span>' + new Date(i.created_at).toLocaleString('fr-FR') + '</span>' +
+      '<span class="text-emerald-400">+' + i.lignes_creees + '</span>' +
+      '<span class="text-indigo-400">~' + i.lignes_majs + '</span>' +
+      '<span class="text-rose-400">!' + i.lignes_erreur + '</span></div>').join('');
+  }
+
+  function parametresAudit() {
+    const p = new URLSearchParams();
+    p.set('limit', '300');
+    const serie = document.getElementById('auditSerie').value.trim();
+    if (serie) p.set('serie', serie);
+    const dec = document.getElementById('auditDecision').value;
+    if (dec) p.set('decision', dec);
+    const du = document.getElementById('auditDu').value;
+    if (du) p.set('du', du);
+    const au = document.getElementById('auditAu').value;
+    if (au) p.set('au', au);
+    if (document.getElementById('auditDerog').checked) p.set('derogation', 'true');
+    return p.toString();
+  }
+
+  async function chargerAudit() {
+    const res = await fetch('/api/audit?' + parametresAudit());
+    const data = await res.json();
+    const corps = document.getElementById('tbodyAudit');
+    corps.innerHTML = data.logs.map(l => {
+      const couleur = l.decision === 'AUTORISE' ? 'emerald' : (l.decision === 'ALERTE' ? 'amber' : 'rose');
+      const incoherent = l.sens_suggere !== l.sens_confirme;
+      return '<tr class="hover:bg-slate-800/40">' +
+        '<td class="px-4 py-2 font-mono text-slate-300">' + new Date(l.scanned_at).toLocaleString('fr-FR') + '</td>' +
+        '<td class="font-mono text-amber-400">' + echapper(l.numero_serie) + '</td>' +
+        '<td class="text-slate-300">' + echapper(l.nom_prenom) + '</td>' +
+        '<td class="text-slate-500">' + l.sens_suggere + '</td>' +
+        '<td class="' + (incoherent ? 'text-amber-400 font-semibold' : 'text-slate-200') + '">' + l.sens_confirme +
+        (incoherent ? ' <i class="fa-solid fa-triangle-exclamation" title="Le vigile a corrigé le sens suggéré"></i>' : '') + '</td>' +
+        '<td>' + badge(l.decision, couleur) + (l.derogation ? ' ' + badge('DÉROGATION', 'amber') : '') + '</td>' +
+        '<td class="text-slate-400">' + echapper((l.motifs || []).join(', ')) + '</td>' +
+        '<td class="text-slate-400">' + echapper(l.agent_nom) + '</td></tr>';
+    }).join('');
+  }
+
+  function exporterAudit() {
+    window.location.href = '/api/export/audit.xlsx?' + parametresAudit();
+  }
+
+  async function regenererQRCodes() {
+    if (!confirm("Régénérer les QR codes de tous les matériels sur le disque du serveur (dossier interne, non accessible depuis le navigateur) ?")) return;
+    try {
+      const res = await fetch('/api/qrcodes/regenerate', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Régénération impossible.');
+        return;
+      }
+      const r = data.resultat;
+      let msg = r.generes + ' / ' + r.total + ' QR codes écrits dans ' + r.dossier + ' (sur le serveur).';
+      if (r.erreurs && r.erreurs.length) {
+        msg += '\n\nErreurs :\n' + r.erreurs.join('\n');
+      }
+      alert(msg);
+    } catch (e) {
+      alert('Serveur injoignable.');
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  }
+
+  chargerStats();
+  chargerDevices();
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: passguard-db
+    environment:
+      POSTGRES_USER: passguard
+      POSTGRES_PASSWORD: passguard
+      POSTGRES_DB: passguard
+      TZ: Africa/Douala
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U passguard -d passguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: passguard-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      PORT: "8080"
+      BASE_URL: http://localhost:8080
+      TZ: Africa/Douala
+      POINT_CONTROLE: Guérite Principale
+      DATABASE_URL : postgres://postgres:admin@localhost:5432/blessing_hardware_passguard?sslmode=disable
+      JWT_SECRET: 0b8d05e0-615f-47c6-851d-6785240d9fc2
+      JWT_EXPIRY_HOURS: "12"
+      ADMIN_EMAIL: admin@blessingpetroleum.net
+      ADMIN_PASSWORD: admin123
+      ADMIN_NAME: Administrateur Système
+      VIGILE_EMAIL: vigile@blessingpetroleum.net
+      VIGILE_PASSWORD: Guerite!2026
+      VIGILE_NAME: Vigile Guérite Principale
+      PUBLIC_VERIFICATION: "true"
+      PIVOT_HOUR: "5"
+      DEROGATION_MAX_HOUR: "21"
+      QR_CODES_DIR: /qr_codes
+    ports:
+      - "8080:8080"
+    volumes:
+      - qr_codes:/qr_codes
+
+volumes:
+  pgdata:
+  qr_codes:
