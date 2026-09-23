@@ -69,7 +69,11 @@ func (h *Handler) Router() *gin.Engine {
 	r.GET("/", optionnel, h.PageAccueil)
 	r.GET("/login", optionnel, h.PageLogin)
 	r.GET("/scan", requis, h.PageScan)
-	r.GET("/v/:sn", optionnel, limiter.Middleware(), h.PageVerification)
+	// Connexion obligatoire : ouvrir le lien d'un QR code sans être connecté
+	// redirige vers /login (qui revient ensuite sur cette même fiche). Le
+	// paramètre PUBLIC_VERIFICATION ne joue donc plus que sur l'API JSON
+	// /api/verify/:sn ci-dessous, pas sur cette page.
+	r.GET("/v/:sn", requis, limiter.Middleware(), h.PageVerification)
 	r.GET("/admin", requis, middleware.RequireRole(domain.RoleAdmin), h.PageAdmin)
 	r.GET("/admin/etiquettes", requis, middleware.RequireRole(domain.RoleAdmin), h.PageEtiquettes)
 

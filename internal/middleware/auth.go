@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +38,11 @@ func Auth(auth *service.AuthService, required bool) gin.HandlerFunc {
 					gin.H{"error": "authentification requise"})
 				return
 			}
-			c.Redirect(http.StatusFound, "/login?next="+c.Request.URL.Path)
+			cible := c.Request.URL.Path
+			if c.Request.URL.RawQuery != "" {
+				cible += "?" + c.Request.URL.RawQuery
+			}
+			c.Redirect(http.StatusFound, "/login?next="+url.QueryEscape(cible))
 			c.Abort()
 			return
 		}

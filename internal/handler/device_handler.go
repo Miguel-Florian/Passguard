@@ -237,16 +237,41 @@ func (h *Handler) QRCode(c *gin.Context) {
 		erreurHTTP(c, err)
 		return
 	}
-	taille, _ := strconv.Atoi(c.DefaultQuery("taille", "320"))
-	png, err := h.qr.PNG(device.NumeroSerie, taille)
+	// Étiquette composite (QR 1.5x1.5cm + numéro de série gravé) : c'est un
+	// fichier destiné à sortir de l'application (téléchargement, impression),
+	// il doit donc rester identifiable une fois isolé, sans le texte HTML
+	// d'accompagnement qui n'existe que dans l'interface.
+	octets, err := h.qr.LabelPNG(device.NumeroSerie, device.NumeroSerie)
 	if err != nil {
 		erreurHTTP(c, err)
 		return
 	}
 	c.Header("Content-Disposition",
 		fmt.Sprintf(`inline; filename="qr-%s.png"`, device.NumeroSerie))
-	c.Data(http.StatusOK, "image/png", png)
+	c.Data(http.StatusOK, "image/png", octets)
 }
+
+// func (h *Handler) QRCode(c *gin.Context) {
+// 	id, err := uuid.Parse(c.Param("id"))
+// 	if err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "identifiant invalide"})
+// 		return
+// 	}
+// 	device, err := h.devices.GetByID(c.Request.Context(), id)
+// 	if err != nil {
+// 		erreurHTTP(c, err)
+// 		return
+// 	}
+// 	taille, _ := strconv.Atoi(c.DefaultQuery("taille", "320"))
+// 	png, err := h.qr.PNG(device.NumeroSerie, taille)
+// 	if err != nil {
+// 		erreurHTTP(c, err)
+// 		return
+// 	}
+// 	c.Header("Content-Disposition",
+// 		fmt.Sprintf(`inline; filename="qr-%s.png"`, device.NumeroSerie))
+// 	c.Data(http.StatusOK, "image/png", png)
+// }
 
 // RegenerateQRCodes régénère tous les QR codes sur disque, dans le dossier
 // interne configuré par QR_CODES_DIR. Ce dossier n'est jamais exposé au
